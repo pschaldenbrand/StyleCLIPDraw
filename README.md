@@ -11,8 +11,12 @@ StyleCLIPDraw adds a style loss to the [CLIPDraw (Frans et al. 2021)](https://ar
 ## Method
 
 
-<p align="left">
+<!-- <p align="left">
     <img src="images/method.PNG" height="400" title="">
+</p> -->
+
+<p align="left">
+    <img src="images/method_animated.gif" height="500" title="">
 </p>
 
 
