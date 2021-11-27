@@ -680,7 +680,7 @@ def style_clip_draw(prompt, style_path, \
 
     img = render_drawing(shapes, shape_groups, canvas_width, canvas_height, t).detach().cpu().numpy()[0]
     save_img(img, str(out_path))
-    return out_path
+    yield out_path
 
 
 import cog
@@ -722,8 +722,9 @@ class Predictor(cog.Predictor):
         # shutil.copy(str(image), input_path)
         print(device)
         print(style_image)
-        out_path = style_clip_draw(prompt, str(style_image), num_paths=num_paths,\
+        for path in style_clip_draw(prompt, str(style_image), num_paths=num_paths,\
                           num_iter=num_iterations, style_opt_freq=style_opt_freq,
-                          style_opt_iter=style_opt_iter)
+                          style_opt_iter=style_opt_iter):
+            yield path
 
-        return out_path
+        return path
