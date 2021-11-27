@@ -1,10 +1,13 @@
 build:
   gpu: true
+  cuda: "10.2"
   python_version: "3.8"
   system_packages:
     - "libgl1-mesa-glx"
     - "libglib2.0-0"
   python_packages:
+    - "torch==1.10.0"
+    - "torchvision==0.11.1"
     - "cmake==3.21.2"
     - "numpy==1.20.1"
     - "ipython==7.21.0"
@@ -20,7 +23,6 @@ build:
     - "tqdm==4.62.3"
     - "scikit-image==0.18.3"
   run:
-    - pip install torch==1.7.1 torchvision==0.8.2
     - git clone https://github.com/BachiLi/diffvg && cd diffvg && git submodule update --init --recursive && CMAKE_PREFIX_PATH=$(pyenv prefix) DIFFVG_CUDA=1 python setup.py install
     - pip install git+https://github.com/openai/CLIP.git --no-deps
 predict: "predict.py:Predictor"
