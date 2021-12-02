@@ -7,6 +7,7 @@ import zipfile
 import json
 import requests
 import numpy as np
+import copy
 import matplotlib.pylab as pl
 import glob
 from pathlib import Path
@@ -521,10 +522,10 @@ def render_drawing(shapes, shape_groups,\
     return img
 
 
-def style_clip_draw(prompt, style_path, \
-                    num_paths=256, num_iter=1000, max_width=50,\
-                    num_augs=4, style_opt_freq=5, style_opt_iter=50,
-                    neg_prompt=None, neg_prompt_2=None,\
+def style_clip_draw(prompt, style_path,
+                    num_paths=256, num_iter=1000, max_width=50,
+                    num_augs=4, style_weight=1.,
+                    neg_prompt=None, neg_prompt_2=None,
                     use_normalized_clip=False,
                     debug=False):
     '''
@@ -537,8 +538,7 @@ def style_clip_draw(prompt, style_path, \
         num_iter(int) : Number of optimization iterations
         max_width(float) : Maximum width of a brush stroke in pixels
         num_augs(int) : Number of image augmentations
-        style_opt_freq(int) : How often to do style optimization. Low value is high frequency
-        style_opt_iter(int) : How many iterations to do in the style optimization loop
+        style_weight=(float) : What to multiply the style loss by
         neg_prompt(str) : Negative prompt. None if you don't want it
         neg_prompt_2(str) : Negative prompt. None if you don't want it
         use_normalized_clip(bool)
@@ -546,11 +546,9 @@ def style_clip_draw(prompt, style_path, \
     return
         np.ndarray(canvas_height, canvas_width, 3)
     '''
-    print('1')
     out_path = Path(tempfile.mkdtemp()) / "out.png"
 
     text_input = clip.tokenize(prompt).to(device)
-    print('2')
 
     if neg_prompt is not None: text_input_neg1 = clip.tokenize(neg_prompt).to(device)
     if neg_prompt_2 is not None: text_input_neg2 = clip.tokenize(neg_prompt_2).to(device)
@@ -581,24 +579,18 @@ def style_clip_draw(prompt, style_path, \
         group.stroke_color.requires_grad = True
         color_vars.append(group.stroke_color)
 
-    print('3')
     # Optimizers
-    points_optim = torch.optim.Adam(points_vars, lr=1.0)
-    width_optim = torch.optim.Adam(stroke_width_vars, lr=0.1)
-    color_optim = torch.optim.Adam(color_vars, lr=0.01)
+    lr = 1
+    points_optim = torch.optim.Adam(points_vars, lr=1.0*lr)
+    width_optim = torch.optim.Adam(stroke_width_vars, lr=0.1*lr)
+    color_optim = torch.optim.Adam(color_vars, lr=0.01*lr)
 
-    # points_vars = [l.data.requires_grad_() for l in points_vars]
-    points_optim_style = torch.optim.RMSprop(points_vars, lr=0.1)
-    width_optim_style = torch.optim.RMSprop(stroke_width_vars, lr=0.1)
-    color_optim_style = torch.optim.RMSprop(color_vars, lr=0.01)
-
-    style_pil = PIL.Image.open(str(style_path)).convert("RGB")#pil_loader(style_path) #if os.path.exists(style_path) else pil_loader_internet(style_path)
+    style_pil = PIL.Image.open(str(style_path)).convert("RGB")
     style_pil = pil_resize_long_edge_to(style_pil, canvas_width)
     style_np = pil_to_np(style_pil)
     style = (np_to_tensor(style_np, "normal").to(device)+1)/2
 
 
-    print('4')
     # Extract style features from style image
     feat_style = None
     for i in range(5):
@@ -610,7 +602,6 @@ def style_clip_draw(prompt, style_path, \
     # Run the main optimization loop
     for t in range(num_iter):
 
-        print('5')
         # Anneal learning rate (makes videos look cleaner)
         if t == int(num_iter * 0.5):
             for g in points_optim.param_groups:
@@ -622,52 +613,38 @@ def style_clip_draw(prompt, style_path, \
         points_optim.zero_grad()
         width_optim.zero_grad()
         color_optim.zero_grad()
-        print('5.5')
+
         img = render_drawing(shapes, shape_groups, canvas_width, canvas_height, t, save=(t % 5 == 0))
-        print('5.6')
+
         loss = 0
         img_augs = []
-        for n in range(num_augs):
-            img_augs.append(augment_trans(img))
-        im_batch = torch.cat(img_augs)
-        image_features = model.encode_image(im_batch)
-        for n in range(num_augs):
-            loss -= torch.cosine_similarity(text_features, image_features[n:n+1], dim=1)
-            if neg_prompt is not None: loss += torch.cosine_similarity(text_features_neg1, image_features[n:n+1], dim=1) * 0.3
-            if neg_prompt_2 is not None: loss += torch.cosine_similarity(text_features_neg2, image_features[n:n+1], dim=1) * 0.3
+        if t < .9*num_iter:
+            for n in range(num_augs):
+                img_augs.append(augment_trans(img))
+            im_batch = torch.cat(img_augs)
+            image_features = model.encode_image(im_batch)
+            for n in range(num_augs):
+                loss -= torch.cosine_similarity(text_features, image_features[n:n+1], dim=1)
+                if neg_prompt is not None: loss += torch.cosine_similarity(text_features_neg1, image_features[n:n+1], dim=1) * 0.3
+                if neg_prompt_2 is not None: loss += torch.cosine_similarity(text_features_neg2, image_features[n:n+1], dim=1) * 0.3
+
+
+        # Do style optimization
+        feat_content = extractor(img)
+
+        xx, xy = sample_indices(feat_content[0], feat_style)
+
+        np.random.shuffle(xx)
+        np.random.shuffle(xy)
+
+        styleloss = calculate_loss(feat_content, feat_content, feat_style, [xx, xy], 0)
+
+        loss += styleloss * style_weight
 
         loss.backward()
         points_optim.step()
         width_optim.step()
         color_optim.step()
-        print('6')
-
-        # Do style optimization from time to time
-        if t%style_opt_freq == 0:
-          img = render_drawing(shapes, shape_groups, canvas_width, canvas_height, t)
-          feat_content = extractor(img)
-          print('7')
-
-          xx, xy = sample_indices(feat_content[0], feat_style) # 0 to sample over first layer extracted
-          for it in range(style_opt_iter):
-              styleloss=0
-              points_optim_style.zero_grad()
-              width_optim_style.zero_grad()
-              color_optim_style.zero_grad()
-
-              img = render_drawing(shapes, shape_groups, canvas_width, canvas_height, t)
-              feat_content = extractor(img)
-
-              if it % 1 == 0 and it != 0:
-                  np.random.shuffle(xx)
-                  np.random.shuffle(xy)
-
-              styleloss = calculate_loss(feat_content, feat_content, feat_style, [xx, xy], 0)
-
-              styleloss.backward()
-              points_optim_style.step()
-              width_optim_style.step()
-              color_optim_style.step()
 
         for path in shapes:
             path.stroke_width.data.clamp_(1.0, max_width)
@@ -675,12 +652,25 @@ def style_clip_draw(prompt, style_path, \
             group.stroke_color.data.clamp_(0.0, 1.0)
 
         if t % 20 == 0:
-            yield checkin(img.detach().cpu().numpy()[0], out_path)
-            print('Iteration:', t, '\tRender loss:', loss.item())
+            with torch.no_grad():
+                shapes_resized = copy.deepcopy(shapes)
+                for i in range(len(shapes)):
+                    shapes_resized[i].stroke_width = shapes[i].stroke_width * 4
+                    for j in range(len(shapes[i].points)):
+                        shapes_resized[i].points[j] = shapes[i].points[j] * 4
+                img = render_drawing(shapes_resized, shape_groups, canvas_width*4, canvas_height*4, t)
+                yield checkin(img.detach().cpu().numpy()[0], out_path)
+                print('Iteration:', t, '\tRender loss:', loss.item())
 
-    img = render_drawing(shapes, shape_groups, canvas_width, canvas_height, t).detach().cpu().numpy()[0]
-    save_img(img, str(out_path))
-    yield out_path
+    with torch.no_grad():
+        shapes_resized = copy.deepcopy(shapes)
+        for i in range(len(shapes)):
+            shapes_resized[i].stroke_width = shapes[i].stroke_width * 4
+            for j in range(len(shapes[i].points)):
+                shapes_resized[i].points[j] = shapes[i].points[j] * 4
+        img = render_drawing(shapes_resized, shape_groups, canvas_width*4, canvas_height*4, t).detach().cpu().numpy()[0]
+        save_img(img, str(out_path))
+        yield out_path
 
 
 import cog
@@ -691,7 +681,6 @@ class Predictor(cog.Predictor):
     def setup(self):
         global device, model, preprocess, extractor
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-        print(device)
 
         pydiffvg.set_print_timing(False)
         # Use GPU if available
@@ -706,25 +695,26 @@ class Predictor(cog.Predictor):
 
 
     @cog.input("prompt", type=str, default="A person watching TV.",
-               help="prompt for generating image")
+               help="Text description of the desired drawing")
     @cog.input("style_image", type=Path, help="Style Image")
-    @cog.input("num_paths", type=int, default=256, help="number of paths/curves")
-    @cog.input("num_iterations", type=int, default=500, help="number of iterations")
-    @cog.input("style_opt_freq", type=int, default=10, help="How often to do style optimization. Low value is very often.")
-    @cog.input("style_opt_iter", type=int, default=50, help="How many iterations to do in the style optimization loop")
+    @cog.input("num_paths", type=int, default=256, help="Number of drawing strokes.")
+    @cog.input("num_iterations", type=int, default=500, help="Number of optimization iterations")
+    @cog.input("style_strength", type=int, default=50, help="How strong the style should be. 100 (max) is a lot. 0 (min) is no style.")
     def predict(self, prompt, style_image, num_paths, num_iterations,
-                style_opt_freq=10, style_opt_iter=50):
+                style_strength=50):
         """Run a single prediction on the model"""
         assert isinstance(num_paths, int) and num_paths > 0, 'num_paths should be an positive integer'
         assert isinstance(num_iterations, int) and num_iterations > 0, 'num_iterations should be an positive integer'
+        # assert num_iterations < 350, 'num_iterations must be less than 350 or else the process will timeout'
+        assert isinstance(style_strength, int) and style_strength >= 0 and style_strength <= 100, \
+                'style_strength should be a positive integer less than 100'
+        assert style_image is not None, 'style_image must be specified'
+        assert prompt is not None and len(prompt) > 0, 'prompt must be specified'
 
-        # input_path = os.path.join(self.opts.input_folder, os.path.basename(image))
-        # shutil.copy(str(image), input_path)
-        print(device)
-        print(style_image)
+        style_weight = 4 * (style_strength/100)
+
         for path in style_clip_draw(prompt, str(style_image), num_paths=num_paths,\
-                          num_iter=num_iterations, style_opt_freq=style_opt_freq,
-                          style_opt_iter=style_opt_iter):
+                          num_iter=num_iterations, style_weight=style_weight, num_augs=10):
             yield path
 
         return path
