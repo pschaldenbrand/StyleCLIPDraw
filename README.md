@@ -1,8 +1,8 @@
 # StyleCLIPDraw
 #### Peter Schaldenbrand, Zhixuan Liu, Jean Oh September 2021
 
-To be featured in the 2021 NeurIPS Workshop on Machine Learning and Design. 
-[ArXiv pre-print](https://arxiv.org/abs/2111.03133).
+Featured in the 2021 NeurIPS Workshop on Machine Learning and Design [Presentation](https://slideslive.com/38970834/styleclipdraw-coupling-content-and-style-in-texttodrawing-synthesis?ref=account-folder-92044-folders). 
+[ArXiv pre-print](https://arxiv.org/abs/2202.12362).
 
 StyleCLIPDraw adds a style loss to the [CLIPDraw (Frans et al. 2021)](https://arxiv.org/pdf/2106.14843.pdf) [(code)](https://github.com/kvfrans/clipdraw) text-to-drawing synthesis model to allow artistic control of the synthesized drawings in addition to control of the content via text.  Whereas performing decoupled style transfer on a generated image only affects the texture, our proposed coupled approach is able to capture  a  style in both texture and shape, suggesting that the style of the drawing is coupled with the drawing process itself.
 
