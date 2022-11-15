@@ -8,7 +8,7 @@ Featured at IJCAI'22 and in the 2021 NeurIPS Workshop on Machine Learning and De
 
 StyleCLIPDraw adds a style loss to the [CLIPDraw (Frans et al. 2021)](https://arxiv.org/pdf/2106.14843.pdf) [(code)](https://github.com/kvfrans/clipdraw) text-to-drawing synthesis model to allow artistic control of the synthesized drawings in addition to control of the content via text.  Whereas performing decoupled style transfer on a generated image only affects the texture, our proposed coupled approach is able to capture  a  style in both texture and shape, suggesting that the style of the drawing is coupled with the drawing process itself.
 
-Checkout our [code on Colab](https://colab.research.google.com/github/pschaldenbrand/StyleCLIPDraw/blob/master/Style_ClipDraw.ipynb)
+Our [Colab demo](https://colab.research.google.com/github/pschaldenbrand/StyleCLIPDraw/blob/master/Style_ClipDraw.ipynb) is currently not working because Colab has removed support for Tensorflow 1.x so the DiffVG dependency will not install. Please use our [Replicate demo](https://replicate.com/pschaldenbrand/style-clip-draw) if you're interested in trying StyleCLIPDraw or install it locally.
 
 <p align="left">
     <img src="images/styleclipdraw_main_example.png" height="300" title="">
